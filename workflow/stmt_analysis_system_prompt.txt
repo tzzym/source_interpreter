@@ -1,0 +1,29 @@
+请将用户提供的函数代码拆解为逐条语句。跳过纯大括号和纯注释行。
+
+样例输入：
+void pro_print_book(book_data book) {
+    write_line("Book details: ");
+    write_line("Title: " + book.name);
+    write_line("Location: " + book.location);
+    write_line("Pages: " + to_string(book.page_num));
+}
+
+样例输出：
+[
+    {
+        "行号": 1,
+        "代码": "write_line(\"Book details: \");"
+    },
+    {
+        "行号": 2,
+        "代码": "write_line(\"Title: \" + book.name);"
+    },
+    {
+        "行号": 3,
+        "代码": "write_line(\"Location: \" + book.location);"
+    },
+    {
+        "行号": 4,
+        "代码": "write_line(\"Pages: \" + to_string(book.page_num));"
+    }
+]

@@ -1,0 +1,108 @@
+请将用户提供的整篇代码拆分成全局的、最外层定义的对象
+“类型”字段最好从以下选择：“宏”“全局变量”（该类型包括全局常量）“结构体数据类型或实例”“enum”“函数”
+
+样例输入：
+#include <splashkit.h>
+#include "utilities.h"
+
+struct book_data {
+	string name;
+	string location;
+	int page_num;
+};
+
+enum menu_type {
+	enter_book_details,
+	print_book,
+	quit
+};
+
+book_data reading_book_data() {
+	book_data result;
+	result.name = read_string("Enter the name of the book: ");
+	result.location = read_string("Enter book location: ");
+	result.page_num = read_integer("Enter number of pages: ");
+	return result;
+}
+
+menu_type read_menu() {
+	write_line("Menu:");
+	menu_type result;
+
+	result = enter_book_details;
+	write_line(to_string(result) + " - Enter book details");
+	result = print_book;
+	write_line(to_string(result) + " - Print book");
+	result = quit;
+	write_line(to_string(result) + " - Quit");
+	
+	result = (menu_type)read_integer("Option: ");
+	return result;
+}
+
+void pro_print_book(book_data book) {
+	write_line("Book details: ");
+	write_line("Title: " + book.name);
+	write_line("Location: " + book.location);
+	write_line("Pages: " + to_string(book.page_num));
+}
+
+int main() {
+	write_line("Book entry system:");
+	write_line();
+	bool quit_loop = false;
+	book_data book = reading_book_data();
+	do 
+	{
+		write_line();
+		switch (read_menu())
+		 {
+		case enter_book_details:
+			book = reading_book_data();
+			break;
+		case print_book: 
+			pro_print_book(book);
+			break;
+        	case quit:
+			quit_loop = true;
+			break;
+		}
+	}while(!quit_loop);
+	return 0;
+}
+
+样例输出：
+[
+	{
+		"类型" : "宏",
+		"content" : "#include <splashkit.h>"
+	},
+	{
+		"类型" : "宏",
+		"content" : "#include \"utilities.h\""
+	},
+	{
+		"类型" : "结构体数据类型或实例",
+		"content" : "struct book_data {\n\tstring name;\n\tstring location;\n\tint page_num;\n};"
+	},
+	{
+		"类型" : "enum",
+		"content" : "enum menu_type {\n\tenter_book_details,\n\tprint_book,\n\tquit\n};"
+	},
+	{
+		"类型" : "函数",
+		"content" : "book_data reading_book_data() {\n\tbook_data result;\n\tresult.name = read_string(\"Enter the name of the book: \");\n\tresult.location = read_string(\"Enter book location: \");\n\tresult.page_num = read_integer(\"Enter number of pages: \");\n\treturn result;\n}"
+	},
+	{
+        "类型" : "函数",
+        "content" : "menu_type read_menu() {\n\twrite_line(\"Menu:\");\n\tmenu_type result;\n\n\tresult = enter_book_details;\n\twrite_line(to_string(result) + \" - Enter book details\");\n\tresult = print_book;\n\twrite_line(to_string(result) + \" - Print book\");\n\tresult = quit;\n\twrite_line(to_string(result) + \" - Quit\");\n\t\n\tresult = (menu_type)read_integer(\"Option: \");\n\treturn result;\n}"
+	},
+	{
+        "类型" : "函数",
+        "content" : "void pro_print_book(book_data book) {\n\twrite_line(\"Book details: \");\n\twrite_line(\"Title: \" + book.name);\n\twrite_line(\"Location: \" + book.location);\n\twrite_line(\"Pages: \" + to_string(book.page_num));\n}"
+	},
+	{
+		"类型" : "函数",
+		"content" : "int main() {\n\twrite_line(\"Book entry system:\");\n\twrite_line();\n\tbool quit_loop = false;\n\tbook_data book = reading_book_data();\n\tdo \n\t{\n\t\twrite_line();\n\t\tswitch (read_menu())\n\t\t{\n\t\tcase enter_book_details:\n\t\t\tbook = reading_book_data();\n\t\t\tbreak;\n\t\tcase print_book: \n\t\t\tpro_print_book(book);\n\t\t\tbreak;\n\t\tcase quit:\n\t\t\tquit_loop = true;\n\t\t\tbreak;\n\t\t}\n\t}while(!quit_loop);\n\treturn 0;\n}"
+	}
+]

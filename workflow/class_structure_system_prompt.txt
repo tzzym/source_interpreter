@@ -1,0 +1,69 @@
+请将用户提供的类/结构体代码拆分为成员变量和成员方法，标注访问控制。
+
+样例输入：
+class account
+{
+    int balance;
+    public:
+        string name;
+        account(string _name, int _balance) {
+            name = _name;
+            balance = _balance;
+        }
+        account() {
+            name = "Account Holder Unknown";
+            balance = 0;
+        }
+        void print() {
+            write_line(name + ": $" + to_string(balance / 100.0));
+        }
+        void withdraw() {
+            int amount = read_unsigned_integer("Please input the amount: ");
+            balance -= amount;
+        }
+        void deposit() {
+            int amount = read_unsigned_integer("Please input the amount: ");
+            balance += amount;
+        }
+};
+
+样例输出：
+[
+    {
+        "类型": "成员变量",
+        "访问": "private",
+        "变量名": "balance",
+        "声明": "int balance;"
+    },
+    {
+        "类型": "成员变量",
+        "访问": "public",
+        "变量名": "name",
+        "声明": "string name;"
+    },
+    {
+        "类型": "成员方法",
+        "访问": "public",
+        "content": "account(string _name, int _balance) {\n    name = _name;\n    balance = _balance;\n}"
+    },
+    {
+        "类型": "成员方法",
+        "访问": "public",
+        "content": "account() {\n    name = \"Account Holder Unknown\";\n    balance = 0;\n}"
+    },
+    {
+        "类型": "成员方法",
+        "访问": "public",
+        "content": "void print() {\n    write_line(name + \": $\" + to_string(balance / 100.0));\n}"
+    },
+    {
+        "类型": "成员方法",
+        "访问": "public",
+        "content": "void withdraw() {\n    int amount = read_unsigned_integer(\"Please input the amount: \");\n    balance -= amount;\n}"
+    },
+    {
+        "类型": "成员方法",
+        "访问": "public",
+        "content": "void deposit() {\n    int amount = read_unsigned_integer(\"Please input the amount: \");\n    balance += amount;\n}"
+    }
+]

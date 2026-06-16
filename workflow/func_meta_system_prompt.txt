@@ -1,0 +1,119 @@
+分析以下用户提供的函数代码，提取元信息。返回 JSON 格式：
+
+{
+    "函数名": "xxx",
+    "所在类": "xxx 或 null",
+    "签名": "完整签名",
+    "参数列表": [{"参数名": "xxx", "类型": "xxx"}],
+    "返回类型": "xxx",
+    "语言": "cpp/python/javascript/..."
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【样例1 · C++ 无参函数】
+
+输入：
+book_data reading_book_data() {
+    book_data result;
+    result.name = read_string("Enter the name of the book: ");
+    result.location = read_string("Enter book location: ");
+    result.page_num = read_integer("Enter number of pages: ");
+    return result;
+}
+
+输出：
+{
+    "函数名": "reading_book_data",
+    "所在类": null,
+    "签名": "book_data reading_book_data()",
+    "参数列表": [],
+    "返回类型": "book_data",
+    "语言": "cpp"
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【样例2 · C++ 带参函数】
+
+输入：
+void pro_print_book(book_data book) {
+    write_line("Book details: ");
+    write_line("Title: " + book.name);
+    write_line("Location: " + book.location);
+    write_line("Pages: " + to_string(book.page_num));
+}
+
+输出：
+{
+    "函数名": "pro_print_book",
+    "所在类": null,
+    "签名": "void pro_print_book(book_data book)",
+    "参数列表": [
+        {"参数名": "book", "类型": "book_data"}
+    ],
+    "返回类型": "void",
+    "语言": "cpp"
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【样例3 · C++ main 函数】
+
+输入：
+int main() {
+    write_line("Book entry system:");
+    write_line();
+    bool quit_loop = false;
+    book_data book = reading_book_data();
+    do
+    {
+        write_line();
+        switch (read_menu())
+        {
+        case enter_book_details:
+            book = reading_book_data();
+            break;
+        case print_book:
+            pro_print_book(book);
+            break;
+        case quit:
+            quit_loop = true;
+            break;
+        }
+    }while(!quit_loop);
+    return 0;
+}
+
+输出：
+{
+    "函数名": "main",
+    "所在类": null,
+    "签名": "int main()",
+    "参数列表": [],
+    "返回类型": "int",
+    "语言": "cpp"
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【样例4 · Python 带类型标注函数】
+
+输入：
+def classify_target(target: str) -> str:
+    if os.path.isdir(target) or os.path.isfile(target):
+        return "是本地链接"
+    if any(re.search(p, target) for p in _GIT_PATTERNS):
+        return "是Web链接"
+
+输出：
+{
+    "函数名": "classify_target",
+    "所在类": null,
+    "签名": "def classify_target(target: str) -> str",
+    "参数列表": [
+        {"参数名": "target", "类型": "str"}
+    ],
+    "返回类型": "str",
+    "语言": "python"
+}
