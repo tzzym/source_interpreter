@@ -82,7 +82,7 @@ def _detect_language(file_path: str) -> str:
 
 def process_file(file_path: str) -> None:
     """处理单个文件：提取结构 → 自底向上分析 → 写入 .解读/ 树。"""
-
+    print('process_file ', file_path)
 
     language = _detect_language(file_path)
     logger.info(f"处理文件：{file_path} ({language})")
@@ -126,6 +126,7 @@ def process_file(file_path: str) -> None:
     file_analyses = []
 
     for func in functions:
+        # 返回dict类型，包含function类型的声明
         func_analysis = _process_one_function(func, language, file_path)
         if func_analysis:
             file_analyses.append(func_analysis)
@@ -154,7 +155,6 @@ def _process_one_function(func: dict, language: str, file_path: str, class_dir: 
 
     class_dir: 可选，成员方法所属的类名，写入 <文件名>.解读/<class_dir>/ 下。
     """
-
 
     with open(os.path.join(_PROMPT_DIR, "func_meta_system_prompt.txt"), "r", encoding="utf-8") as f:
         func_meta_system_prompt = f.read()
@@ -211,6 +211,7 @@ def _process_one_function(func: dict, language: str, file_path: str, class_dir: 
 def _analyze_function(meta: dict, source_code: str, statements: list) -> dict:
     """AI 函数级正式分析：算法概述、逻辑块、前置/后置条件、调用关系。"""
 
+    print('analyse function', meta)
 
     with open(os.path.join(_PROMPT_DIR, "func_analysis_system_prompt.txt"), "r", encoding="utf-8") as f:
         func_analysis_system_prompt = f.read()
@@ -372,6 +373,8 @@ def _analyze_class(name: str, class_type: str, source_code: str, members: list, 
 
 def walk_directory(dir_path: str, max_files: int = None) -> dict:
     """DFS 遍历目录，返回处理结果摘要。
+    本函数功能类似于dir命令
+    在本程序中控制往下递归的方向
 
     Args:
         dir_path: 目录路径
@@ -390,7 +393,9 @@ def walk_directory(dir_path: str, max_files: int = None) -> dict:
 
     # 收集代码文件
     code_files = []
+    # 枚举所有子目录
     subdirs = []
+    # 权限检查
     for entry in entries:
         if entry.startswith(".") or entry in _SKIP_DIRS:
             continue
@@ -419,9 +424,13 @@ def iterate_project(project_path: str) -> None:
       2. 递归进入子目录
     """
     logger.info(f"开始迭代项目：{project_path}")
-
+    # 当前目录下的文件和子目录
     info = walk_directory(project_path)
     logger.info(f"共 {info['total_files']} 个代码文件")
+
+    # 再递归子目录（步骤3）
+    for subdir in info["subdirs"]:
+        iterate_project(subdir)
 
     # 先处理文件（步骤2）
     for file_path in info["files"]:
@@ -430,11 +439,7 @@ def iterate_project(project_path: str) -> None:
         except Exception as e:
             logger.error(f"处理文件失败：{file_path} - {e}")
 
-    # 再递归子目录（步骤3）
-    for subdir in info["subdirs"]:
-        iterate_project(subdir)
-
-    # ---- 目录级汇总（步骤3.2） ----
+    # ---- 目录级汇总（步骤3.2） ----  info就是 walk_directory 里列出来的，当前目录的文件和子目录
     _summarize_directory(project_path, info)
 
 
@@ -446,14 +451,16 @@ def _summarize_directory(dir_path: str, info: dict) -> None:
     """汇总当前目录下所有文件和子目录的分析结果，生成模块概述。"""
     import json
 
-    # 收集文件概述
+    # 收集文件概述。file_analyses列表包含“文件名”“分析”两个字段
     file_analyses = []
     for file_path in info["files"]:
         base = os.path.join(
             os.path.dirname(file_path),
             os.path.basename(file_path) + ".解读",
         )
+        # 加载解读文件路径
         overview_path = os.path.join(base, f"{os.path.basename(file_path)}.解读.md")
+        # 把代码文件的整个分析文档加载出来
         content = _read_file_safe(overview_path)
         if content:
             file_analyses.append({"文件名": os.path.basename(file_path), "分析": content})
@@ -505,8 +512,10 @@ def _summarize_directory(dir_path: str, info: dict) -> None:
 
     # 写入
     dname = os.path.basename(dir_path.rstrip("/").rstrip("\\"))
-    dir_output = os.path.join(dir_path, f"{dname}.解读")
+    # 目录级解读存放的路径（不包含文件本身）
+    dir_output = os.path.join(dir_path)
     os.makedirs(dir_output, exist_ok=True)
+    # 目录级解读的文件
     with open(os.path.join(dir_output, f"{dname}.解读.md"), "w", encoding="utf-8") as f:
         f.write(overview)
     logger.info(f"  已写入目录概述：{dir_output}")
@@ -579,4 +588,5 @@ def _analyze_file(file_path: str, macros: list, analyses: list) -> str:
         stream=False,
         extra_body={"thinking": {"type": "enabled"}}
     )
+    print('file ', file_path, ' analized')
     return response.choices[0].message.content
