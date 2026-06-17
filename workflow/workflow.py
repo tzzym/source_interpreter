@@ -573,6 +573,7 @@ def _analyze_file(file_path: str, macros: list, analyses: list) -> str:
             "名称": a["name"],
             "类型": a.get("type", "function"),
             "分析": a.get("analysis", ""),
+            "目标": a.get("目标", "") 
         })
 
     file_input = json.dumps({
@@ -590,5 +591,5 @@ def _analyze_file(file_path: str, macros: list, analyses: list) -> str:
         stream=False,
         extra_body={"thinking": {"type": "enabled"}}
     )
-    print('file ', file_path, ' analized')
+    print('文件 ', file_path, ' 已分析')
     return response.choices[0].message.content
