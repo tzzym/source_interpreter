@@ -103,6 +103,7 @@ def process_file(file_path: str) -> None:
         stream=False,
         extra_body={"thinking": {"type": "enabled"}}
     )
+    # elements 的结构见提示词
     elements = _parse_json(response.choices[0].message.content)
 
     # ---- 2.2 按类型分发 ----
@@ -231,7 +232,7 @@ def _analyze_function(meta: dict, source_code: str, statements: list) -> dict:
         stream=False,
         extra_body={"thinking": {"type": "enabled"}}
     )
-    return response.choices[0].message.content
+    return {"目标" : func_input, "分析" : response.choices[0].message.content}
 
 
 def _write_function_output(file_path: str, func_name: str, analysis: str, statements: list, class_dir: str = None) -> None:
@@ -469,7 +470,7 @@ def _summarize_directory(dir_path: str, info: dict) -> None:
     subdir_analyses = []
     for subdir in info["subdirs"]:
         dname = os.path.basename(subdir)
-        overview_path = os.path.join(subdir, f"{dname}.解读", f"{dname}.解读.md")
+        overview_path = os.path.join(subdir, f"{dname}.解读.md")
         content = _read_file_safe(overview_path)
         if content:
             subdir_analyses.append({"目录名": dname, "分析": content})
