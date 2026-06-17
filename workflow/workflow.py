@@ -205,7 +205,8 @@ def _process_one_function(func: dict, language: str, file_path: str, class_dir: 
         "name": func_name,
         "type": "function",
         "meta": meta,
-        "analysis": func_analysis,
+        "analysis": func_analysis['分析'],
+        "目标" : func_analysis['目标']
     }
 
 
