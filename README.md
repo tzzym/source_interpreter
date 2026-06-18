@@ -1,11 +1,11 @@
-# source-intepreter
+# source-interpreter
 
 一款Agent工具，用于对代码项目的功能进行分析。本项目采用DFS算法，对每个目录、代码文件、代码内容进行作用分析。具体方法见 `workflow\README.md` 。
 
 ## 项目结构
 
 ```
-source_intepreter
+source_interpreter
       │
       ├──  __init__.py  python项目固定格式
       │
