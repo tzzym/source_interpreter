@@ -19,7 +19,7 @@
 2. 依赖从 import/include 语句推导，区分外部库和内部模块
 3. 公开接口列出所有可被外部调用的函数和类
 
-样例输入：
+样例输入1：
 {
     "文件名": "book_utils.cpp",
     "依赖": {
@@ -40,18 +40,86 @@
     ]
 }
 
-样例输出：
+样例输出1：
 # 文件解读：book_utils.cpp
 
-## 概述
-提供书籍数据的输入和输出功能，包括从用户读取书籍信息和格式化打印书籍详情。
+样例输入2：
+{
+    "文件名": "planner.py",
+    "依赖": {
+        "外部": [
+            "google.adk.agents.sequential_agent.SequentialAgent",
+            "coggen.agents.planner.init_research.get_init_research_agent",
+            "coggen.agents.planner.outline.get_init_outline_loop_agent"
+        ],
+        "内部": []
+    },
+    "函数分析": [
+        {
+            "名称": "get_panner",
+            "类型": "procedure",
+            "分析": "# 函数解读：get_planner\n\n## 签名\n`def get_planner() -> SequentialAgent`\n\n## 算法概述\n创建并返回一个名为 `planner` 的顺序代理，该代理组合了“初始化研究”和“初始化提纲循环”两个子代理，构成一个集成规划单元。\n\n## 参数说明\n无参数\n\n## 返回值说明\n\n返回一个 `SequentialAgent` 实例，其内部配置了指定的名称和子代理列表，可供调用者用于后续规划流程。\n\n## 逻辑块\n### 构建规划代理\n通过调用 `get_init_research_agent()` 和 `get_init_outline_loop_agent()` 获取两个子代理对象，并以列表形式传入 `SequentialAgent` 的构造函数，同时指定代理名称为 `"planner"`，从而组合出一个顺序执行的规划代理对象。\n\n## 前置条件 / 后置条件\n- 前置：无\n- 后置：无\n\n## 调用关系\n`SequentialAgent`（构造函数）、`get_init_research_agent`、`get_init_outline_loop_agent`"
+            "目标": "def get_planner():\n\tplanner = SequentialAgent(\n\t\tname=\"planner\",\n\t\tsub_agents=[\n\t\t\tget_init_research_agent(),\n\t\t\tget_init_outline_loop_agent(),\n\t\t]\n\t)\n\treturn planner"
+        }
+    ]
+}
 
-## 依赖
-- 外部：`<splashkit.h>`
-- 内部引用：`utilities.h`
+样例输出2：
+# 文件解读：planner.py
 
-## 公开接口
-| 符号 | 说明 |
-|------|------|
-| `reading_book_data()` | 从标准输入读取书籍信息并返回 book_data |
-| `pro_print_book(book)` | 格式化打印书本的标题、位置和页数 |
+## 核心功能
+
+1. 多轮智能搜索
+- 基于用户输入的 query（报告主题），通过 generate_research_queries_unified() 生成子查询（sub-queries）
+- 最多进行 3 轮 迭代搜索，每轮最多 3 个子查询
+- 自动判断已有信息是否充足，充足则提前终止循环
+
+2. 网络内容抓取与筛选
+- 通过 fetch_urls() 执行实际网络搜索
+- 使用 judge_relevant_web_context_query_batch() 判断搜索结果与主题的相关性，过滤掉无关内容
+- 使用 combine_same_result() 合并相同来源的搜索结果
+
+3. 事实提取（Fact Extraction）
+- 将搜索到的网页内容切分成 chunks，存入共享内容池（Context Manager）
+- 根据 use_full_search 模式决定提取方式：
+- 完整搜索模式：调用 summarize_web_context_for_page_section() 进行深度摘要
+- 普通模式：调用 chunks_to_facts() 将 chunks 转化为结构化事实（facts）
+
+4. 事实去重与质量过滤
+- 本地去重：quick_deduplicate_facts() 基于规则快速去重
+- 语义去重 + 相关性判断 + 冲突解决：当事实数量超过 5 条时，调用 LLM 进行语义级去重和冲突事实的裁决，保留最可靠的版本
+- 最终输出高质量的事实集合
+
+5. 结果输出
+- 将最终的事实列表存入 ctx.session.state['init_web_search']，供后续的 Outline（大纲生成）等下游 Agent 使用
+
+在整体流程中的位置
+
+InitResearchAgent（初始研究）
+        ↓ 输出事实集合
+outline.py（大纲生成）
+        ↓
+section_plan.py → section_writer.py → reviewer → renderer
+
+它是整个报告生成流水线的第一步，为后续的大纲规划（outline）和章节撰写（section writing）提供扎实的背景知识基础。
+
+关键设计特点
+
+- 流式事件驱动：通过 yield Event(...) 实时向前端推送搜索进度（生成的查询词、找到的 URL、提取的事实数等），用户体验好
+- 防止过早满足：提供 search_context 指导模型"不是为了搜索而搜索"，而是确保信息的全面性和深度
+- 模块化工具链：搜索、相关性判断、事实提取、去重等环节都由独立的工具函数完成，职责清晰
+
+## 文件清单
+| 文件 | 职责摘要 |
+|------|---------|
+| `combine_plan.py` | 计划集成代理：将各节网络搜索结果注入大纲并生成集成提示，解析模型输出更新章节与标题。 |
+| `init_research.py` | 初始研究代理：基于用户查询生成子查询、抓取网页、抽取事实并去重，结果写入会话状态。 |
+| `outline.py` | 初始大纲规划：构建提示、解析并标准化大纲JSON，循环结束后生成写作章节列表；含升级检查子代理。 |
+| `planner.py` | 顺序组装入口：将研究初始化与提纲循环组合成一个顺序执行代理，对外提供统一规划接口。 |
+| `replan.py` | 重规划辅助：解析重规划JSON、合并网络搜索上下文、规范化章节名、处理继承逻辑。 |
+| `replan_loop.py` | 多轮重规划循环代理：协调内容/结构检测、大纲重组与验证，持续优化大纲和报告状态。 |
+| `section_plan.py` | 章节计划生成与优化：通过生成→修订→检查反馈的循环，生成并更新章节级的详细计划。 |
+| `section_search.py` | 章节网络搜索代理：针对特定章节异步收集、去重、过滤相关事实，产生进度事件并存储结果。 |
+
+## 子目录
+（本模块无子目录）

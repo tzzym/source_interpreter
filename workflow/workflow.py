@@ -31,7 +31,7 @@ def _parse_json(raw: str, default=None):
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
-        logger.warning(f"JSON 解析失败，原始内容: {raw[:200]}")
+        logger.error(f"JSON 解析失败，模型返回无法被机器识别为 JSON。完整原始内容:\n{raw}")
         return default
 
 # 加载系统提示词
@@ -104,7 +104,7 @@ def process_file(file_path: str) -> None:
         extra_body={"thinking": {"type": "enabled"}}
     )
     # elements 的结构见提示词
-    elements = _parse_json(response.choices[0].message.content)
+    elements = _parse_json(response.choices[0].message.content, default=[])
 
     # ---- 2.2 按类型分发 ----
     macros = []
@@ -172,7 +172,7 @@ def _process_one_function(func: dict, language: str, file_path: str, class_dir: 
         stream=False,
         extra_body={"thinking": {"type": "enabled"}}
     )
-    meta = _parse_json(response.choices[0].message.content)
+    meta = _parse_json(response.choices[0].message.content, default={})
     func_name = meta.get("函数名", "unknown")
     logger.info(f"  函数：{func_name}")
 
@@ -189,7 +189,7 @@ def _process_one_function(func: dict, language: str, file_path: str, class_dir: 
         stream=False,
         extra_body={"thinking": {"type": "enabled"}}
     )
-    statements = _parse_json(response.choices[0].message.content)
+    statements = _parse_json(response.choices[0].message.content, default=[])
 
     # ---- 逐条语句深度解读 ----
     for stmt in statements:
@@ -199,7 +199,7 @@ def _process_one_function(func: dict, language: str, file_path: str, class_dir: 
     func_analysis = _analyze_function(meta, content, statements)
 
     # ---- 写入 .解读/ 树 ----
-    _write_function_output(file_path, func_name, func_analysis, statements, class_dir)
+    _write_function_output(file_path, func_name, func_analysis['分析'], statements, class_dir)
 
     return {
         "name": func_name,
@@ -328,7 +328,7 @@ def _process_one_class(cls: dict, language: str, file_path: str) -> dict | None:
         f.write(class_overview)
     logger.info(f"  已写入：{class_dir}")
 
-    return {"name": class_name, "type": class_type, "analysis": class_overview}
+    return {"name": class_name, "type": class_type, "analysis": class_overview, '目标' : class_name}
 
 
 def _analyze_class(name: str, class_type: str, source_code: str, members: list, methods: list) -> str:
@@ -568,6 +568,7 @@ def _analyze_file(file_path: str, macros: list, analyses: list) -> str:
 
     # 提取函数/类摘要：直接传完整 analysis markdown
     func_summaries = []
+    # analyses元素的类型，取决于_process_one_function()和process_one_class()的返回值。
     for a in analyses:
         func_summaries.append({
             "名称": a["name"],
