@@ -10,8 +10,13 @@ SKILL.md 3.1 递归步骤的 Python 实现：
 import os
 import json
 import logging
+import asyncio
 
 from ..ai_client import client
+from .split_document.agent import root_agent
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types # For creating message Content/Parts
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +85,63 @@ def _detect_language(file_path: str) -> str:
 # 文件处理管道（步骤2）
 # ---------------------------------------------------------------------------
 
+async def _call_split_agent(source_code: str) -> str:
+    """通过 ADK Runner 调用"拆分一个文档"智能体，返回其文本输出。
+
+    这是 Google ADK agent-team delegation 模式的实现：
+    process_file()（根）→ 委托结构提取任务 → root_agent（子智能体）
+
+    使用固定的 session ID + create_session() / delete_session() 管理生命周期。
+    每次调用前显式创建，调用后立即删除，确保不同文件互不干扰。
+    """
+    APP_NAME = "source_interpreter"
+    USER_ID = "workflow"
+    SESSION_ID = "split_document"  # 固定 session，通过 create/delete 控制生命周期
+
+    session_service = InMemorySessionService()
+
+    # ---- 参考 ADK 官方写法，显式创建 session ----
+    session = await session_service.create_session(
+        app_name=APP_NAME,
+        user_id=USER_ID,
+        session_id=SESSION_ID,
+    )
+
+    runner = Runner(
+        agent=root_agent,
+        app_name=APP_NAME,
+        session_service=session_service,
+    )
+
+    # Prepare the user's message in ADK format
+    content = types.Content(role='user', parts=[types.Part(text=source_code)])
+
+    try:
+        # ---- 向智能体发送源代码，等待最终响应 ----
+        # 参考 ADK 官方 is_final_response() 写法：
+        #   只在 agent 给出最终回复时取文本，中间 tool-call 等 event 自动跳过
+        final_text = ""
+        async for event in runner.run_async(
+            user_id=USER_ID,
+            session_id=SESSION_ID,
+            new_message=content,
+        ):
+            if event.is_final_response():
+                if event.content and event.content.parts:
+                    final_text = event.content.parts[0].text
+                elif event.actions and event.actions.escalate:
+                    final_text = f"Agent escalated: {event.error_message or 'No specific message.'}"
+                break  # 拿到最终响应后立即停止，不再处理后续 event
+    finally:
+        # ---- 删除 session，清理上下文 ----
+        await session_service.delete_session(
+            app_name=APP_NAME,
+            user_id=USER_ID,
+            session_id=SESSION_ID,
+        )
+    return final_text
+
+
 def process_file(file_path: str) -> None:
     """处理单个文件：提取结构 → 自底向上分析 → 写入 .解读/ 树。"""
     print('process_file ', file_path)
@@ -93,18 +155,27 @@ def process_file(file_path: str) -> None:
     if not code.strip():
         return
 
-    # ---- 2.1 结构提取（AI 调用） ----
-    response = client.chat.completions.create(
-        model="deepseek-v4-pro",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": code},
-        ],
-        stream=False,
-        extra_body={"thinking": {"type": "enabled"}}
-    )
-    # elements 的结构见提示词
-    elements = _parse_json(response.choices[0].message.content, default=[])
+    # ---- 2.1 结构提取（委托给"拆分一个文档"智能体） ----
+    # Google ADK agent-team delegation 模式：
+    #   process_file()  = 根智能体（协调者，负责后续函数/类/文件汇总分析）
+    #   root_agent      = 子智能体（专门做代码结构拆分，在 agent.py 中定义）
+    #   Session 由 _call_split_agent 内部用 create/delete 管理，固定 ID，自动清理
+    try:
+        raw_output = asyncio.run(_call_split_agent(code))
+    except RuntimeError:
+        # 已有 event loop 运行时降级为手动管理 loop
+        loop = asyncio.new_event_loop()
+        raw_output = loop.run_until_complete(_call_split_agent(code))
+        loop.close()
+    # output_schema 保证 agent 输出 {"elements": [{"类型": "...", "content": "..."}]}
+    # _parse_json 解析后取出 elements 列表；也兼容直接数组格式作为降级
+    parsed = _parse_json(raw_output, default={})
+    if isinstance(parsed, list):
+        elements = parsed
+    elif isinstance(parsed, dict) and "elements" in parsed:
+        elements = parsed["elements"]
+    else:
+        elements = []
 
     # ---- 2.2 按类型分发 ----
     macros = []
@@ -114,10 +185,12 @@ def process_file(file_path: str) -> None:
 
     for elem in elements:
         t = elem["类型"]
-        if t == "宏":
-            macros.append(elem["content"])
+        # "拆分一个文档"智能体可能返回"代码引入"（如 #include），
+        # 与原来的"宏"类型一并归入依赖项，供后续文件级汇总使用
+        if t == "宏" or t == "代码引入":
+            macros.append(elem["内容"])
         elif t == "全局变量":
-            globals_.append(elem["content"])
+            globals_.append(elem["内容"])
         elif t == "函数":
             functions.append(elem)
         elif t.startswith("结构体数据类型") or t == "enum":
