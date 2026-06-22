@@ -1,0 +1,34 @@
+[
+	{
+		"类型" : "代码引入",
+		"content" : "#include <splashkit.h>"
+	},
+	{
+		"类型" : "代码引入",
+		"content" : "#include \"utilities.h\""
+	},
+	{
+		"类型" : "结构体数据类型或实例",
+		"content" : "struct book_data {\n\tstring name;\n\tstring location;\n\tint page_num;\n};"
+	},
+	{
+		"类型" : "enum",
+		"content" : "enum menu_type {\n\tenter_book_details,\n\tprint_book,\n\tquit\n};"
+	},
+	{
+		"类型" : "函数",
+		"content" : "book_data reading_book_data() {\n\tbook_data result;\n\tresult.name = read_string(\"Enter the name of the book: \");\n\tresult.location = read_string(\"Enter book location: \");\n\tresult.page_num = read_integer(\"Enter number of pages: \");\n\treturn result;\n}"
+	},
+	{
+        "类型" : "函数",
+        "content" : "menu_type read_menu() {\n\twrite_line(\"Menu:\");\n\tmenu_type result;\n\n\tresult = enter_book_details;\n\twrite_line(to_string(result) + \" - Enter book details\");\n\tresult = print_book;\n\twrite_line(to_string(result) + \" - Print book\");\n\tresult = quit;\n\twrite_line(to_string(result) + \" - Quit\");\n\t\n\tresult = (menu_type)read_integer(\"Option: \");\n\treturn result;\n}"
+	},
+	{
+        "类型" : "函数",
+        "content" : "void pro_print_book(book_data book) {\n\twrite_line(\"Book details: \");\n\twrite_line(\"Title: \" + book.name);\n\twrite_line(\"Location: \" + book.location);\n\twrite_line(\"Pages: \" + to_string(book.page_num));\n}"
+	},
+	{
+		"类型" : "函数",
+		"content" : "int main() {\n\twrite_line(\"Book entry system:\");\n\twrite_line();\n\tbool quit_loop = false;\n\tbook_data book = reading_book_data();\n\tdo \n\t{\n\t\twrite_line();\n\t\tswitch (read_menu())\n\t\t{\n\t\tcase enter_book_details:\n\t\t\tbook = reading_book_data();\n\t\t\tbreak;\n\t\tcase print_book: \n\t\t\tpro_print_book(book);\n\t\t\tbreak;\n\t\tcase quit:\n\t\t\tquit_loop = true;\n\t\t\tbreak;\n\t\t}\n\t}while(!quit_loop);\n\treturn 0;\n}"
+	}
+]
