@@ -8,8 +8,13 @@ SKILL.md 3.1 递归步骤的 Python 实现：
 """
 
 import os
+import asyncio
 import json
 import logging
+import importlib
+import inspect
+import re
+import uuid
 
 from ..ai_client import client
 
@@ -22,17 +27,126 @@ def _parse_json(raw: str, default=None):
     if not raw:
         return default
     if raw.startswith("```"):
-        raw = raw.split("\n", 1)[-1] if "\n" in raw else raw[3:]
-        if raw.endswith("```"):
-            raw = raw[:-3]
+        lines = raw.splitlines()
+        if lines:
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        raw = "\n".join(lines)
         raw = raw.strip()
     if not raw:
         return default
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
-        logger.error(f"JSON 解析失败，模型返回无法被机器识别为 JSON。完整原始内容:\n{raw}")
-        return default
+        pass
+
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(raw):
+        if char not in "[{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(raw[index:])
+            return value
+        except json.JSONDecodeError:
+            continue
+
+    logger.error(f"JSON 解析失败，模型返回无法被机器识别为 JSON。完整原始内容:\n{raw}")
+    return default
+
+
+_TYPE_KEYS = ("类型", "type", "kind", "category", "类别", "种类", "代码类型")
+_CONTENT_KEYS = ("content", "内容", "代码", "code", "source", "source_code", "源码", "原文", "片段")
+
+_TYPE_ALIASES = {
+    "代码引入": "宏",
+    "引入": "宏",
+    "导入": "宏",
+    "头文件": "宏",
+    "include": "宏",
+    "import": "宏",
+    "macro": "宏",
+    "宏定义": "宏",
+    "global": "全局变量",
+    "global variable": "全局变量",
+    "全局常量": "全局变量",
+    "常量": "全局变量",
+    "变量": "全局变量",
+    "function": "函数",
+    "函数定义": "函数",
+    "method": "函数",
+    "方法": "函数",
+    "class": "结构体数据类型或实例",
+    "struct": "结构体数据类型或实例",
+    "结构体": "结构体数据类型或实例",
+    "类": "结构体数据类型或实例",
+    "结构体数据类型": "结构体数据类型或实例",
+    "枚举": "enum",
+    "枚举类型": "enum",
+    "enumeration": "enum",
+}
+
+
+def _first_existing_value(data: dict, keys: tuple[str, ...]):
+    for key in keys:
+        if key in data:
+            return data[key]
+    return None
+
+
+def _stringify_content(value) -> str:
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _infer_code_element_type(content: str) -> str:
+    stripped = content.lstrip()
+    if stripped.startswith(("#include", "#define", "import ", "from ")):
+        return "宏"
+    if re.match(r"(?:template\s*<[^>]+>\s*)?(?:class|struct)\s+\w+", stripped):
+        return "结构体数据类型或实例"
+    if re.match(r"enum(?:\s+class)?\s+\w+", stripped):
+        return "enum"
+    if re.search(r"\)\s*(?:const\s*)?(?:noexcept\s*)?(?:->\s*[\w:<>,\s*&]+)?\s*\{", stripped):
+        return "函数"
+    return "全局变量"
+
+
+def _normalize_code_element_type(raw_type, content: str) -> str:
+    if raw_type is None:
+        return _infer_code_element_type(content)
+
+    normalized = str(raw_type).strip()
+    alias_key = normalized.lower()
+    return _TYPE_ALIASES.get(normalized, _TYPE_ALIASES.get(alias_key, normalized))
+
+
+def _normalize_code_elements(elements) -> list[dict]:
+    """规整源码结构数组，兜住模型偶发的键名/类型名漂移。"""
+    if not isinstance(elements, list):
+        logger.error(f"源码结构不是 JSON 数组，实际类型：{type(elements).__name__}")
+        return []
+
+    normalized = []
+    for index, elem in enumerate(elements):
+        if not isinstance(elem, dict):
+            logger.warning(f"跳过第 {index} 个源码结构元素：不是 JSON 对象")
+            continue
+
+        content = _first_existing_value(elem, _CONTENT_KEYS)
+        if content is None:
+            logger.warning(f"跳过第 {index} 个源码结构元素：缺少 content/内容 字段")
+            continue
+
+        content = _stringify_content(content)
+        raw_type = _first_existing_value(elem, _TYPE_KEYS)
+        normalized.append({
+            "类型": _normalize_code_element_type(raw_type, content),
+            "content": content,
+        })
+
+    return normalized
 
 # 加载系统提示词
 _PROMPT_DIR = os.path.dirname(__file__)
@@ -76,6 +190,119 @@ def _detect_language(file_path: str) -> str:
     return ext_map.get(ext, "unknown")
 
 
+def _extract_code_elements_with_chat(code: str) -> list[dict]:
+    """使用普通模型调用提取源码结构。"""
+    response = client.chat.completions.create(
+        model="deepseek-v4-pro",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": code},
+        ],
+        stream=False,
+        extra_body={"thinking": {"type": "enabled"}}
+    )
+    elements = _parse_json(response.choices[0].message.content, default=[])
+    return _normalize_code_elements(elements)
+
+
+def _extract_event_text(event) -> str:
+    content = getattr(event, "content", None)
+    parts = getattr(content, "parts", None) or []
+    texts = []
+    for part in parts:
+        text = getattr(part, "text", None)
+        if text:
+            texts.append(text)
+    return "\n".join(texts).strip()
+
+
+async def _run_code_structure_agent_async(code: str) -> str:
+    agent_module = importlib.import_module(".拆分一个文档.agent", package=__package__)
+    root_agent = agent_module.root_agent
+
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.genai import types
+
+    app_name = "source_interpreter"
+    session_service = InMemorySessionService()
+    runner = Runner(
+        agent=root_agent,
+        app_name=app_name,
+        session_service=session_service,
+    )
+
+    user_id = "source_interpreter"
+    session_id = f"split-code-{uuid.uuid4().hex}"
+    maybe_session = session_service.create_session(
+        app_name=app_name,
+        user_id=user_id,
+        session_id=session_id,
+    )
+    session = await maybe_session if inspect.isawaitable(maybe_session) else maybe_session
+    active_session_id = getattr(session, "id", session_id)
+
+    message = types.Content(role="user", parts=[types.Part(text=code)])
+    final_texts = []
+    seen_texts = []
+
+    async for event in runner.run_async(
+        user_id=user_id,
+        session_id=active_session_id,
+        new_message=message,
+    ):
+        text = _extract_event_text(event)
+        if not text:
+            continue
+        seen_texts.append(text)
+
+        is_final_response = getattr(event, "is_final_response", None)
+        if callable(is_final_response) and is_final_response():
+            final_texts.append(text)
+
+    if final_texts:
+        return final_texts[-1]
+    if seen_texts:
+        return seen_texts[-1]
+    return ""
+
+
+def _extract_code_elements_with_adk_skill(code: str) -> list[dict] | None:
+    """优先使用 ADK skill；ADK 不可用或输出无效时返回 None。"""
+    try:
+        running_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        running_loop = None
+    if running_loop and running_loop.is_running():
+        logger.warning("当前已有 asyncio 事件循环，回退普通结构提取")
+        return None
+
+    try:
+        raw = asyncio.run(_run_code_structure_agent_async(code))
+    except RuntimeError as exc:
+        logger.warning(f"ADK skill 路径不可用，回退普通结构提取：{exc}")
+        return None
+    except (ImportError, ModuleNotFoundError) as exc:
+        logger.warning(f"未能导入 Google ADK，回退普通结构提取：{exc}")
+        return None
+    except Exception as exc:
+        logger.warning(f"ADK skill 结构提取失败，回退普通结构提取：{exc}")
+        return None
+
+    elements = _normalize_code_elements(_parse_json(raw, default=[]))
+    if not elements:
+        logger.warning("ADK skill 未返回可用源码结构，回退普通结构提取")
+        return None
+    return elements
+
+
+def _extract_code_elements(code: str) -> list[dict]:
+    elements = _extract_code_elements_with_adk_skill(code)
+    if elements is not None:
+        return elements
+    return _extract_code_elements_with_chat(code)
+
+
 # ---------------------------------------------------------------------------
 # 文件处理管道（步骤2）
 # ---------------------------------------------------------------------------
@@ -93,18 +320,8 @@ def process_file(file_path: str) -> None:
     if not code.strip():
         return
 
-    # ---- 2.1 结构提取（AI 调用） ----
-    response = client.chat.completions.create(
-        model="deepseek-v4-pro",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": code},
-        ],
-        stream=False,
-        extra_body={"thinking": {"type": "enabled"}}
-    )
-    # elements 的结构见提示词
-    elements = _parse_json(response.choices[0].message.content, default=[])
+    # ---- 2.1 结构提取（优先 ADK skill，失败后回退普通模型调用） ----
+    elements = _extract_code_elements(code)
 
     # ---- 2.2 按类型分发 ----
     macros = []
@@ -113,7 +330,7 @@ def process_file(file_path: str) -> None:
     classes = []
 
     for elem in elements:
-        t = elem["类型"]
+        t = elem.get("类型", "")
         if t == "宏":
             macros.append(elem["content"])
         elif t == "全局变量":
@@ -122,6 +339,8 @@ def process_file(file_path: str) -> None:
             functions.append(elem)
         elif t.startswith("结构体数据类型") or t == "enum":
             classes.append(elem)
+        else:
+            logger.warning(f"跳过未知源码片段类型：{t}")
 
     # ---- 2.3 自底向上分析 ----
     file_analyses = []
